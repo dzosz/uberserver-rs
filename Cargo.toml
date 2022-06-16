@@ -1,0 +1,21 @@
+#FIXME how to add env variables for cargo run?
+#[env]
+#RUST_LOG = "debug"
+
+[package]
+name = "uberserver-rs"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "3.1.18", features = ["derive"] }
+env_logger = { version = "0.9.0" }
+log = { version = "0.4.17" }
+signal-hook = { version = "0.3.14" }
+tokio = { version = "1.18.2", features=["full"] }
+#tokio = { version = "1.18.2", features=["net", "sync"] }
+tokio-util = { version = "0.7.3", features = ["full"] }
+tokio-stream = { version = "0.1.9" }
+futures = { version = "0.3.21" }
