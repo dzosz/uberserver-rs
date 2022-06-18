@@ -7,11 +7,11 @@ CREATE TABLE users (
   last_login DATETIME NOT NULL,
   last_ip VARCHAR(15) NOT NULL,
   last_agent VARCHAR(254) NOT NULL,
-  last_syc_id VARCHAR(16) NOT NULL,
+  last_sys_id VARCHAR(16) NOT NULL,
   last_mac_id VARCHAR(16) NOT NULL,
   ingame_time INTEGER NOT NULL,
   access VARCHAR(32) NOT NULL,
-  email VARCHAR(254) UNIQUE,
+  email VARCHAR(254) NOT NULL UNIQUE,
   bot INTEGER NOT NULL
 )
 

@@ -7,12 +7,13 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Framed, LinesCodec};
+use tokio::time::{sleep, Duration, Instant};
 
 use crate::client::Client;
 
-const RLIMIT: usize = 255; // TODO rlimit::getrlimit();
-const TCP_CHAR_LIMIT: usize = 1024; // TODO rlimit::getrlimit();
-                                    //
+const SOCKET_LIMIT: usize = 1024; // TODO rlimit::getrlimit_nofile() / 2;
+const TCP_CHAR_LIMIT: usize = 1024;
+const TIMEOUT: u64 = 60;
 pub struct ChatServer {
     tls: bool,
     connected_clients: usize,
@@ -22,25 +23,33 @@ pub struct ChatServer {
 
 async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
     let mut lines = Framed::new(stream, LinesCodec::new_with_max_length(TCP_CHAR_LIMIT));
+    let timeout = sleep(Duration::from_secs(TIMEOUT));
+    tokio::pin!(timeout); // Pinning the Sleep with tokio::pin! is necessary when the same Sleep is selected on multiple times.
+    let mut lastdata = Instant::now();
+
     loop {
         tokio::select! {
-            // A message was received from a peer. Send it to the current user.
             /*
+            // A message was received from a peer. Send it to the current user.
             Some(msg) = peer.rx.recv() => {
                 peer.lines.send(&msg).await?;
-            }
-            */
+            }*/
             result = lines.next() => match result {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
-                    // TODO refresh timeout after received msg
                     debug!("received {}", msg);
                     let mut state = state.lock().await;
+
+                    if state.client.is_logged() {
+                        lastdata = Instant::now();
+                    }
+
                     state.client.Handle(&msg);
 
                     if !state.client.message_queue.is_empty() {
-                        // FIXME check if we don't duplicate newline here
+                        // FIXME check if we don't duplicate newline here because we use
+                        // LinesCodec()
                         lines.send(&state.client.message_queue).await; 
                         state.client.message_queue.clear();
                     }
@@ -51,7 +60,6 @@ async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
 
                     //self._root.session_manager.commit_guard()
                 }
-                // An error occurred.
                 Some(Err(e)) => {
                     error!("an error occurred while processing messages for {}; error = {:?}",
                         uid, e
@@ -61,6 +69,13 @@ async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
                 // The stream has been exhausted.
                 None => break,
             },
+            _ = &mut timeout => {
+                if lastdata < Instant::now() + Duration::from_secs(TIMEOUT) {
+                    error!("client {} timed out", uid);
+                    break
+                }
+                timeout.as_mut().reset(lastdata + Duration::from_secs(TIMEOUT));
+            }
         }
     }
     let mut state = state.lock().await;
@@ -90,8 +105,8 @@ impl ChatServer {
                 }
                 */
 
-                if s.connected_clients >= RLIMIT-1 {
-                    error!("too many connections: {} > {}", s.connected_clients, RLIMIT);
+                if s.connected_clients >= SOCKET_LIMIT {
+                    error!("too many connections: {} > {}", s.connected_clients, SOCKET_LIMIT);
                     let mut lines = Framed::new(stream, LinesCodec::new());
                     lines.send("DENIED too many connections, sorry!").await;
                     continue;
@@ -100,7 +115,6 @@ impl ChatServer {
                 uid += 1;
             }
             debug!("accepted connection {}", uid);
-            // TODO set timeout 60s on connection
 
             let cloned_state = Arc::clone(&state);
 

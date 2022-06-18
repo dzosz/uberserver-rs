@@ -19,3 +19,7 @@ tokio = { version = "1.18.2", features=["full"] }
 tokio-util = { version = "0.7.3", features = ["full"] }
 tokio-stream = { version = "0.1.9" }
 futures = { version = "0.3.21" }
+diesel = { version = "1.4.8", features = ["postgres", "sqlite", "chrono"] }
+dotenv = "0.15.0"
+chrono = { version = "0.4.19", features = ["serde"] }
+# serde = { version = "1.0.137", features = ["derive"] }

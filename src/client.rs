@@ -21,6 +21,10 @@ impl<'a> Client {
         }
     }
 
+    pub fn is_logged(&self) -> bool {
+        return true; // TODO implement
+    }
+
     pub fn Handle(&mut self, msg: &str) {
         // TODO here implement flood limit
 

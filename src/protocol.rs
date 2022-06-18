@@ -1,3 +1,7 @@
+use log::{debug, error, info};
+use std::net::SocketAddr;
+use std::net::UdpSocket;
+
 use crate::client::Client;
 
 #[derive(Default)]
@@ -30,6 +34,42 @@ impl Command for PingCommand {
         match self.response {
             Some(ref v) => client.Send(&format!("PONG {}", v)),
             None => client.Send("PONG {}"),
+        }
+    }
+}
+
+struct PortTestCommand {
+    host : String,
+    port : usize,
+}
+
+impl PortTestCommand  {
+    fn get_function_args(&mut self, args: &str) -> Result<(), String> {
+        let arg_num = 2;
+
+        let mut parts = args.splitn(arg_num, ' ').fuse();
+
+        self.host = parts.next()
+            .ok_or_else(|| "Missing host argument")?
+            .into();
+        self.port = parts.next()
+            .ok_or_else(|| "Missing port argument")?
+            .parse()
+            .map_err(|_| "Can't parse port argument")?; 
+        Ok(())
+    }
+
+    fn execute(&self, client: &mut Client) {
+        debug!("Executing PortTestCommand {}:{}", self.host, self.port);
+        let local = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
+        match UdpSocket::bind(&local) {
+            Ok(socket) => {
+                let target = format!("{}:{}", self.host, self.port);
+                socket.send_to(b"Port testing...", target);
+            },
+            Err(_) => {
+                error!("Could not open udp socket on {}:{} in PortTestCommand", self.host, self.port);
+            }
         }
     }
 }
