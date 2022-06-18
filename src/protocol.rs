@@ -38,12 +38,19 @@ impl Command for PingCommand {
     }
 }
 
+struct SayCommand {
+}
+
+impl SayCommand {
+}
+
+#[derive(Default)]
 struct PortTestCommand {
     host : String,
     port : usize,
 }
 
-impl PortTestCommand  {
+impl Command for PortTestCommand  {
     fn get_function_args(&mut self, args: &str) -> Result<(), String> {
         let arg_num = 2;
 
@@ -78,6 +85,7 @@ impl Protocol {
     fn get_function(command: &str) -> Option<Box<dyn Command>> {
         match command {
             "PING" => Some(Box::new(PingCommand::default())),
+            "PORTTEST" => Some(Box::new(PortTestCommand::default())),
             _ => None
         }
     }
