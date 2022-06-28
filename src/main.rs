@@ -13,6 +13,8 @@ mod natserver;
 mod protocol;
 mod sqlusers;
 mod schema;
+mod channel;
+mod sayhooks;
 
 /**Starts uberserver.
 

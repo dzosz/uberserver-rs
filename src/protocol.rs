@@ -17,6 +17,11 @@ struct PingCommand {
     response: Option<String>,
 }
 
+fn out_FAILED(client : &mut Client, cmd : &str, message : &str) {
+    info!("[{}] <{}>: {} {}", client.session_id, client.username, cmd, message);
+    client.Send(&format!("FAILED msg={}\tcmd={}", message, cmd));
+}
+
 impl Command for PingCommand {
     fn get_function_args(&mut self, args: &str) -> Result<(), String> {
         let arg_num = 1;
@@ -33,15 +38,70 @@ impl Command for PingCommand {
     fn execute(&self, client: &mut Client) {
         match self.response {
             Some(ref v) => client.Send(&format!("PONG {}", v)),
-            None => client.Send("PONG {}"),
+            None => client.Send("PONG"),
         }
     }
 }
 
 struct SayCommand {
+    client : String,
+    chan : String,
+    msg : String
 }
 
-impl SayCommand {
+impl Command for SayCommand {
+    fn get_function_args(&mut self, args: &str) -> Result<(), String> {
+        let arg_num = 3;
+
+        let mut parts = args.splitn(arg_num, ' ').fuse();
+        self.client = parts.next()
+            .ok_or_else(|| "Missing client argument")?
+            .into();
+        self.chan = parts.next()
+            .ok_or_else(|| "Missing chan argument")?
+            .into();
+        self.msg = parts.next()
+            .ok_or_else(|| "Missing msg argument")?
+            .into();
+        Ok(())
+    }
+
+    fn execute(&self, client: &mut Client) {
+        if self.msg.is_empty() || self.msg.trim().is_empty() {
+            return;
+        }
+
+        match client.get_channel(&self.chan) {
+            None => {
+                out_FAILED(client, "SAY", &format!("Channel {} does not exist", &self.chan));
+                return
+            }
+            Some(chan) => {
+                if !chan.has_user(client.session_id) {
+                    out_FAILED(client, "SAY", &format!("Not present in channel {}", &self.chan));
+                    return;
+                }
+                client.hook_SAY(chan);
+                // hook say
+                if chan.isMuted(client.session_id) {
+                    // TODO send channel.getMuteMessage(client)))
+                    client.Send(&format!("CHANNELMESSAGE {} You are muted.", &self.chan));
+                }
+            }
+        }
+        /*
+		msg = self.SayHooks.hook_SAY(self, client, channel, msg)
+		if channel.isMuted(client):
+			client.Send('CHANNELMESSAGE %s You are %s.' % (chan, channel.getMuteMessage(client)))
+			return
+		if channel.store_history:
+			self.userdb.add_channel_message(channel.id, client.user_id, None, msg, False)
+
+		self._root.broadcast('SAID %s %s %s' % (chan, client.username, msg), chan, set([]), client, 'u')
+        */
+
+
+    }
 }
 
 #[derive(Default)]

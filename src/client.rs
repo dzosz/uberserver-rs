@@ -1,7 +1,9 @@
 use log::{debug, error, info};
 use std::time::SystemTime;
+use std::collections::HashMap;
 
 use crate::protocol::Protocol;
+use crate::channel::Channel;
 
 //#[derive(Default)]
 pub struct Client {
@@ -9,6 +11,31 @@ pub struct Client {
     protocol: Protocol,
     msg_id: String,
     pub message_queue: String,
+    pub session_id: usize,
+    pub username: String,
+    channels: HashMap<String, Channel>,
+    accesslevels : AccessLevel
+}
+
+    pub const User: u8 = 0x01;
+    pub const Moderator: u8 = 0x02;
+    pub const Admin: u8 = 0x04;
+    pub const Bot: u8 = 0x08;
+    pub const Agreement: u8 = 0x30;
+    pub const Fresh: u8 = 0x20;
+
+#[derive(Default)]
+pub struct AccessLevel(u8);
+    // user, moderator, admin, bot, agreement, fresh
+    //flags : u32
+
+impl AccessLevel {
+    pub fn isUser(&self) -> bool {
+        self.0 & User > 0
+    }
+    pub fn isAdmin(&self) -> bool {
+        self.0 & Admin > 0
+    }
 }
 
 impl<'a> Client {
@@ -18,11 +45,19 @@ impl<'a> Client {
             protocol: Default::default(),
             msg_id: Default::default(),
             message_queue: Default::default(),
+            session_id: Default::default(),
+            username: Default::default(),
+            channels: Default::default(),
+            accesslevels: Default::default(),
         }
     }
 
     pub fn is_logged(&self) -> bool {
         return true; // TODO implement
+    }
+
+    pub fn get_channel(&self, channel : &str) -> Option<&Channel> {
+        self.channels.get(channel)
     }
 
     pub fn Handle(&mut self, msg: &str) {
@@ -82,6 +117,9 @@ impl<'a> Client {
             }
             Err(_) => msg,
         }
+    }
+
+    pub fn hook_SAY(&mut self, chan : &Channel) {
     }
 }
 

@@ -17,14 +17,14 @@ const TIMEOUT: u64 = 60;
 pub struct ChatServer {
     tls: bool,
     connected_clients: usize,
-    client: Client,
     // root
 }
 
-async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
+async fn process(stream: TcpStream,/* state: Arc<Mutex<ChatServer>>,*/ uid: usize) {
     let mut lines = Framed::new(stream, LinesCodec::new_with_max_length(TCP_CHAR_LIMIT));
     let timeout = sleep(Duration::from_secs(TIMEOUT));
     tokio::pin!(timeout); // Pinning the Sleep with tokio::pin! is necessary when the same Sleep is selected on multiple times.
+    let mut client = Client::new();
     let mut lastdata = Instant::now();
 
     loop {
@@ -39,19 +39,19 @@ async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
                 // broadcast this message to the other users.
                 Some(Ok(msg)) => {
                     debug!("received {}", msg);
-                    let mut state = state.lock().await;
+                    //let mut state = state.lock().await;
 
-                    if state.client.is_logged() {
+                    if client.is_logged() {
                         lastdata = Instant::now();
                     }
 
-                    state.client.Handle(&msg);
+                    client.Handle(&msg);
 
-                    if !state.client.message_queue.is_empty() {
+                    if !client.message_queue.is_empty() {
                         // FIXME check if we don't duplicate newline here because we use
                         // LinesCodec()
-                        lines.send(&state.client.message_queue).await; 
-                        state.client.message_queue.clear();
+                        lines.send(&client.message_queue).await; 
+                        client.message_queue.clear();
                     }
 
                     // TODO broadcast this message to other clients?
@@ -64,7 +64,7 @@ async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
                     error!("an error occurred while processing messages for {}; error = {:?}",
                         uid, e
                     );
-                    // TODO should we exit from here or not?
+                    break; // TODO should we exit from here or not?
                 }
                 // The stream has been exhausted.
                 None => break,
@@ -78,15 +78,13 @@ async fn process(stream: TcpStream, state: Arc<Mutex<ChatServer>>, uid: usize) {
             }
         }
     }
-    let mut state = state.lock().await;
-    state.connected_clients -= 1;
 }
+
 impl ChatServer {
     pub async fn start(port: u32) -> io::Result<()> {
         let state = Arc::new(Mutex::new(ChatServer {
             tls: false,
             connected_clients: 0,
-            client: Client::new(),
         }));
 
         let addr = format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap();
@@ -99,11 +97,10 @@ impl ChatServer {
 
             {
                 let mut s = state.lock().await;
+
                 /* TODO refactor to use methods
                 if !s.connectionMade {
-
-                }
-                */
+                } */
 
                 if s.connected_clients >= SOCKET_LIMIT {
                     error!("too many connections: {} > {}", s.connected_clients, SOCKET_LIMIT);
@@ -117,9 +114,11 @@ impl ChatServer {
             debug!("accepted connection {}", uid);
 
             let cloned_state = Arc::clone(&state);
-
             tokio::spawn(async move {
-                process(stream, cloned_state, uid).await;
+                process(stream, uid).await;
+                let mut srv = cloned_state.lock().await;
+                srv.connected_clients -= 1;
+                debug!("closed connection {}", uid);
             });
         }
     }
