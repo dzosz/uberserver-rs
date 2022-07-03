@@ -71,7 +71,9 @@ impl Command for SayCommand {
             return;
         }
 
-        match client.get_channel(&self.chan) {
+        let clone = client.server_state.clone(); // FIXME cheating borrow checker
+        let mut state = clone.lock().unwrap();
+        match state.get_channel(&self.chan) {
             None => {
                 out_FAILED(client, "SAY", &format!("Channel {} does not exist", &self.chan));
                 return
@@ -81,26 +83,26 @@ impl Command for SayCommand {
                     out_FAILED(client, "SAY", &format!("Not present in channel {}", &self.chan));
                     return;
                 }
-                client.hook_SAY(chan);
-                // hook say
+                if chan.isMuted(client.session_id) {
+                    return;
+                }
+
+                client.hook_SAY(chan, &self.msg);
+
                 if chan.isMuted(client.session_id) {
                     // TODO send channel.getMuteMessage(client)))
+                    // client.Send('CHANNELMESSAGE %s You are %s.' % (chan, channel.getMuteMessage(client)))
                     client.Send(&format!("CHANNELMESSAGE {} You are muted.", &self.chan));
+                    return
                 }
+                if chan.store_history {
+                    // TODO impl
+                    //self.userdb.add_channel_message(channel.id, client.user_id, None, msg, False)
+                }
+
+                chan.broadcast(&format!("SAID {} {} {}", chan.name, client.session_id, self.msg));
             }
         }
-        /*
-		msg = self.SayHooks.hook_SAY(self, client, channel, msg)
-		if channel.isMuted(client):
-			client.Send('CHANNELMESSAGE %s You are %s.' % (chan, channel.getMuteMessage(client)))
-			return
-		if channel.store_history:
-			self.userdb.add_channel_message(channel.id, client.user_id, None, msg, False)
-
-		self._root.broadcast('SAID %s %s %s' % (chan, client.username, msg), chan, set([]), client, 'u')
-        */
-
-
     }
 }
 

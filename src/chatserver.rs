@@ -2,14 +2,18 @@ use futures::SinkExt;
 use log::{debug, error, info};
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Framed, LinesCodec};
 use tokio::time::{sleep, Duration, Instant};
+use std::collections::HashMap;
 
 use crate::client::Client;
+use crate::client::SharedServerState;
+use crate::channel::Channel;
 
 const SOCKET_LIMIT: usize = 1024; // TODO rlimit::getrlimit_nofile() / 2;
 const TCP_CHAR_LIMIT: usize = 1024;
@@ -20,20 +24,32 @@ pub struct ChatServer {
     // root
 }
 
-async fn process(stream: TcpStream,/* state: Arc<Mutex<ChatServer>>,*/ uid: usize) {
+#[derive(Default)]
+pub struct ServerState {
+    channels: HashMap<String, Channel>
+}
+
+impl ServerState {
+    pub fn get_channel(&mut self, channel : &str) -> Option<&mut Channel> {
+        self.channels.get_mut(channel)
+    }
+}
+
+async fn process(stream: TcpStream, state: SharedServerState, uid: usize) {
     let mut lines = Framed::new(stream, LinesCodec::new_with_max_length(TCP_CHAR_LIMIT));
     let timeout = sleep(Duration::from_secs(TIMEOUT));
     tokio::pin!(timeout); // Pinning the Sleep with tokio::pin! is necessary when the same Sleep is selected on multiple times.
-    let mut client = Client::new();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let mut client = Client::new(state, tx.clone());
     let mut lastdata = Instant::now();
 
     loop {
         tokio::select! {
-            /*
-            // A message was received from a peer. Send it to the current user.
-            Some(msg) = peer.rx.recv() => {
-                peer.lines.send(&msg).await?;
-            }*/
+            // Message to pass from Channel
+            Some(msg) = rx.recv() => {
+                //peer.lines.send(&msg).await?;
+                lines.send(&msg).await; 
+            }
             result = lines.next() => match result {
                 // A message was received from the current user, we should
                 // broadcast this message to the other users.
@@ -53,10 +69,6 @@ async fn process(stream: TcpStream,/* state: Arc<Mutex<ChatServer>>,*/ uid: usiz
                         lines.send(&client.message_queue).await; 
                         client.message_queue.clear();
                     }
-
-                    // TODO broadcast this message to other clients?
-                    //let msg = format!("{}: {}", username, msg);
-                    //state.broadcast(addr, &msg).await;
 
                     //self._root.session_manager.commit_guard()
                 }
@@ -82,7 +94,7 @@ async fn process(stream: TcpStream,/* state: Arc<Mutex<ChatServer>>,*/ uid: usiz
 
 impl ChatServer {
     pub async fn start(port: u32) -> io::Result<()> {
-        let state = Arc::new(Mutex::new(ChatServer {
+        let chat = Arc::new(Mutex::new(ChatServer {
             tls: false,
             connected_clients: 0,
         }));
@@ -91,12 +103,14 @@ impl ChatServer {
         info!("Awaiting TCP messages on port {}", port);
         let listener = TcpListener::bind(addr).await?;
 
+        let sstate = SharedServerState::new(StdMutex::new(ServerState::default()));
+
         let mut uid: usize = 0;
         loop {
             let (stream, addr) = listener.accept().await?;
 
             {
-                let mut s = state.lock().await;
+                let mut s = chat.lock().await;
 
                 /* TODO refactor to use methods
                 if !s.connectionMade {
@@ -113,9 +127,10 @@ impl ChatServer {
             }
             debug!("accepted connection {}", uid);
 
-            let cloned_state = Arc::clone(&state);
+            let cloned_state = Arc::clone(&chat);
+            let sstate2 = sstate.clone();
             tokio::spawn(async move {
-                process(stream, uid).await;
+                process(stream, sstate2, uid,).await;
                 let mut srv = cloned_state.lock().await;
                 srv.connected_clients -= 1;
                 debug!("closed connection {}", uid);

@@ -1,9 +1,18 @@
 use log::{debug, error, info};
 use std::time::SystemTime;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+use tokio::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crate::protocol::Protocol;
+use crate::chatserver::ServerState;
+use crate::sayhooks::SpamHandler;
 use crate::channel::Channel;
+
+pub type SharedServerState = Arc<Mutex<ServerState>>;
+pub type Tx = mpsc::UnboundedSender<String>;
 
 //#[derive(Default)]
 pub struct Client {
@@ -13,8 +22,11 @@ pub struct Client {
     pub message_queue: String,
     pub session_id: usize,
     pub username: String,
-    channels: HashMap<String, Channel>,
-    accesslevels : AccessLevel
+    //channels: HashMap<String, Channel>,
+    pub accesslevels : AccessLevel,
+    pub server_state : SharedServerState,
+    spam_handler : SpamHandler,
+    send_message_queue : Tx
 }
 
     pub const User: u8 = 0x01;
@@ -31,15 +43,18 @@ pub struct AccessLevel(u8);
 
 impl AccessLevel {
     pub fn isUser(&self) -> bool {
-        self.0 & User > 0
+        (self.0 & User) > 0
     }
     pub fn isAdmin(&self) -> bool {
-        self.0 & Admin > 0
+        (self.0 & Admin) > 0
+    }
+    pub fn isMod(&self) -> bool {
+        (self.0 & Moderator) > 0 || self.isAdmin()
     }
 }
 
 impl<'a> Client {
-    pub fn new() -> Self {
+    pub fn new(state: SharedServerState, tx : Tx) -> Self {
         Self {
             lastdata: SystemTime::now(),
             protocol: Default::default(),
@@ -47,8 +62,11 @@ impl<'a> Client {
             message_queue: Default::default(),
             session_id: Default::default(),
             username: Default::default(),
-            channels: Default::default(),
+            //channels: Default::default(),
             accesslevels: Default::default(),
+            server_state: state,
+            spam_handler: Default::default(),
+            send_message_queue : tx
         }
     }
 
@@ -56,9 +74,9 @@ impl<'a> Client {
         return true; // TODO implement
     }
 
-    pub fn get_channel(&self, channel : &str) -> Option<&Channel> {
-        self.channels.get(channel)
-    }
+    //pub fn get_channel(&self, channel : &str) -> Option<&Channel> {
+    //    self.channels.get(channel)
+    //}
 
     pub fn Handle(&mut self, msg: &str) {
         // TODO here implement flood limit
@@ -119,7 +137,14 @@ impl<'a> Client {
         }
     }
 
-    pub fn hook_SAY(&mut self, chan : &Channel) {
+    pub fn hook_SAY(&mut self, chan : &mut Channel, msg : &str) {
+        if chan.antispam && !self.accesslevels.isMod() && !chan.isOp(self.session_id) {
+            self.spam_handler.spamrec(&chan.name, msg);
+            if self.spam_handler.spam_enum(msg) {
+                let ban_expiration = Instant::now() + Duration::from_secs(5*60);
+                chan.mute(self.session_id, ban_expiration);
+            }
+        }
     }
 }
 

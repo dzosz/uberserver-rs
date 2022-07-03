@@ -24,7 +24,6 @@ pub struct SayHooks {
 }
 
 impl SayHooks {
-
     fn load(&mut self) {
         self.load_bad_words("bad_words.txt");
         self.load_bad_sites("bad_sites.txt");
@@ -109,28 +108,35 @@ impl HistoricalMessage {
     }
 }
 
+
+#[derive(Default)]
 pub struct SpamHandler {
     lastsaid : HashMap<String, VecDeque<HistoricalMessage>>
 }
 
 impl SpamHandler {
-    fn spamrec(&mut self, channel : &str, message : &str) {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn spamrec(&mut self, channel : &str, message : &str) {
         let msg = HistoricalMessage::new(message);
         let chan_history = self.lastsaid.entry(channel.to_string()).or_default();
         chan_history.push_back(msg);
     }
 
-    // TODO this is so much work for each message...
+    // TODO this is so much work for each message... Find instead of reallocating to 'already'?
     // TODO write test for spamenum
-    fn spam_enum(&mut self, channel : &str) -> bool {
+    pub fn spam_enum(&mut self, channel : &str) -> bool {
         let mut already = HashMap::new(); // TODO reuse existing chan_history from beginning to current
                                       // iter instead
         let chan_history = self.lastsaid.entry(channel.to_string()).or_default();
         let now = Instant::now();
-        chan_history.retain(|elem| now - elem.time < Duration::from_secs(5));
+        chan_history.retain(|elem| now - elem.time < Duration::from_secs(5)); // TODO early exit as
+                                                                              // messages are
+                                                                              // sorted
 
         let mut bonus : f32 = 0.0;
-
 
         for msg in chan_history.iter() {
             let counter = already.entry(&msg.message_hash).or_insert(0);
