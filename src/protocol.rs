@@ -43,10 +43,12 @@ impl Command for PingCommand {
     }
 }
 
+#[derive(Default)]
 struct SayCommand {
     client : String,
     chan : String,
-    msg : String
+    msg : String,
+    ex_postfix : String,
 }
 
 impl Command for SayCommand {
@@ -75,12 +77,12 @@ impl Command for SayCommand {
         let mut state = clone.lock().unwrap();
         match state.get_channel(&self.chan) {
             None => {
-                out_FAILED(client, "SAY", &format!("Channel {} does not exist", &self.chan));
+                out_FAILED(client, &format!("SAY{}", self.ex_postfix), &format!("Channel {} does not exist", &self.chan));
                 return
             }
             Some(chan) => {
                 if !chan.has_user(client.session_id) {
-                    out_FAILED(client, "SAY", &format!("Not present in channel {}", &self.chan));
+                    out_FAILED(client, &format!("SAY{}", self.ex_postfix), &format!("Not present in channel {}", &self.chan));
                     return;
                 }
                 if chan.isMuted(client.session_id) {
@@ -100,7 +102,10 @@ impl Command for SayCommand {
                     //self.userdb.add_channel_message(channel.id, client.user_id, None, msg, False)
                 }
 
-                chan.broadcast(&format!("SAID {} {} {}", chan.name, client.session_id, self.msg));
+                chan.broadcast(&format!("SAID{} {} {} {}", self.ex_postfix, chan.name, client.session_id, self.msg));
+
+
+                // TODO ignored old compat code
             }
         }
     }
@@ -148,6 +153,12 @@ impl Protocol {
         match command {
             "PING" => Some(Box::new(PingCommand::default())),
             "PORTTEST" => Some(Box::new(PortTestCommand::default())),
+            "SAY" => Some(Box::new(SayCommand::default())),
+            "SAYEX" =>  {
+                let mut cmd = SayCommand::default();
+                cmd.ex_postfix = "EX".to_string();
+                Some(Box::new(cmd))
+            },
             _ => None
         }
     }
